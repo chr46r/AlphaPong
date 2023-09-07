@@ -1,160 +1,203 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+import numpy as np
+import random
+import pygame
+import pygame.freetype
+import sys
+import time
+import tensorflow as tf
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.optimizers import Adam
 
-# C extensions
-*.so
+# Define the game parameters
+WIDTH = 800
+HEIGHT = 600
+PADDLE_WIDTH = 10
+PADDLE_HEIGHT = 100
+BALL_SIZE = 20
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+# Initialize Pygame
+try:
+    pygame.init()
+except pygame.error as e:
+    print("Pygame could not be initialized:", e)
+    sys.exit(1)
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+clock = pygame.time.Clock()
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# Create a separate surface for drawing
+buffer = pygame.Surface((WIDTH, HEIGHT))
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
+# Create the paddles
+left_paddle_y = HEIGHT / 2 - PADDLE_HEIGHT / 2
+right_paddle_y = HEIGHT / 2 - PADDLE_HEIGHT / 2
 
-# Translations
-*.mo
-*.pot
+# Create the ball
+ball = pygame.Rect(WIDTH / 2 - BALL_SIZE / 2, HEIGHT / 2 - BALL_SIZE / 2, BALL_SIZE, BALL_SIZE)
+ball_velocity = np.array([random.choice([-12, 12]), random.choice([-12, 12])])  # Fixed ball velocity initialization
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+# Create the DQN model
+model = Sequential()
+model.add(Dense(64, input_shape=(4,), activation='relu'))
+model.add(Dense(32, activation='relu'))
+model.add(Dense(4, activation='linear'))  # Changed to 4 units for 4 actions
 
-# Flask stuff:
-instance/
-.webassets-cache
+try:
+    model.compile(loss='mse', optimizer=Adam(lr=0.001))
+except Exception as e:
+    print("Error occurred during model compilation:", e)
+    pygame.quit()
+    sys.exit(1)
 
-# Scrapy stuff:
-.scrapy
+# Set the DQN training parameters
+gamma = 0.99
+epsilon = 1.0
+epsilon_decay = 0.999
+epsilon_min = 0.01
 
-# Sphinx documentation
-docs/_build/
+# Create a memory buffer for experience replay
+memory = []
+max_memory_size = 10000
 
-# PyBuilder
-.pybuilder/
-target/
+# Define the batch size for training
+batch_size = 32
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Initialize reward variable
+reward = 0
+done = False
 
-# IPython
-profile_default/
-ipython_config.py
+# Initialize points for each player
+left_player_points = 0
+right_player_points = 0
 
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+# Start the clock
+start_time = time.time()
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
+# Load font for clock
+pygame.freetype.init()
+clock_font = pygame.freetype.Font(None, 25)
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
+# Game loop
+running = True
+try:
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
 
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/#use-with-ide
-.pdm.toml
+        # Move the paddles based on DQN actions
+        state = np.array([int(ball.x), int(ball.y), ball_velocity[0], ball_velocity[1]])
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
+        if np.random.uniform() <= epsilon:
+            action = np.random.randint(0, 4)  # Random action
+        else:
+            action = np.argmax(model.predict(np.expand_dims(state.reshape(1, -1), axis=0))[0])
 
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
+        if action == 0 and left_paddle_y > 0:
+            left_paddle_y -= 10
+        elif action == 1 and left_paddle_y < HEIGHT - PADDLE_HEIGHT:
+            left_paddle_y += 10
+        elif action == 2 and right_paddle_y > 0:
+            right_paddle_y -= 10
+        elif action == 3 and right_paddle_y < HEIGHT - PADDLE_HEIGHT:
+            right_paddle_y += 10
 
-# SageMath parsed files
-*.sage.py
+         # Check for collisions with paddles
+        if ball.colliderect(pygame.Rect(0, left_paddle_y, PADDLE_WIDTH, PADDLE_HEIGHT)):
+            ball_velocity[0] = -ball_velocity[0]
+            reward = -1  # Ball hit your paddle, assign a negative reward
+        elif ball.colliderect(pygame.Rect(WIDTH - PADDLE_WIDTH, right_paddle_y, PADDLE_WIDTH, PADDLE_HEIGHT)):
+            ball_velocity[0] = -ball_velocity[0]
+            reward = 1  # Ball hit opponent's paddle, assign a positive reward
 
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+        # Check for collisions with walls
+        if ball.y <= 0 or ball.y >= HEIGHT - BALL_SIZE:
+            ball_velocity[1] = -ball_velocity[1]
 
-# Spyder project settings
-.spyderproject
-.spyproject
+        # Check for out-of-bounds
+        if ball.x <= 0:
+            right_player_points += 1  # Increment points for the right player
+            reward = -1  # Ball went out of bounds on the left side, assign a negative reward
+            done = True  # Set terminal flag to end the game
+        elif ball.x >= WIDTH - BALL_SIZE:
+            left_player_points += 1  # Increment points for the left player
+            reward = 1  # Ball went out of bounds on the right side, assign a positive reward
+            done = True  # Set terminal flag to end the game
 
-# Rope project settings
-.ropeproject
+        # Reset the ball position and velocity if it goes out of bounds
+        if done:
+            ball.x = WIDTH / 2 - BALL_SIZE / 2
+            ball.y = HEIGHT / 2 - BALL_SIZE / 2
+            ball_velocity = np.array([random.choice([-12, 12]), random.choice([-12, 12])])
+            done = False  # Reset the "done" flag
 
-# mkdocs documentation
-/site
+        # Update the ball position
+        ball.x += int(ball_velocity[0])
+        ball.y += int(ball_velocity[1])
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+        # Store the current state, action, next state, reward, and terminal flag in the memory buffer
+        next_state = np.array([ball.x, ball.y, ball_velocity[0], ball_velocity[1]])
+        memory.append((state, action, next_state, reward, done))
+        if len(memory) > max_memory_size:
+            memory = memory[-max_memory_size:]
 
-# Pyre type checker
-.pyre/
+        # Perform training
+        if len(memory) > batch_size:
+            minibatch = random.sample(memory, batch_size)
+            states = np.array([experience[0] for experience in minibatch])
+            actions = np.array([experience[1] for experience in minibatch])
+            next_states = np.array([experience[2] for experience in minibatch])
+            rewards = np.array([experience[3] for experience in minibatch])
+            terminals = np.array([experience[4] for experience in minibatch])
 
-# pytype static type analyzer
-.pytype/
+            target_Qs = model.predict(states)
+            next_Qs = model.predict(next_states)
+            max_next_Qs = np.max(next_Qs, axis=1)
+            targets = rewards + gamma * max_next_Qs * (1 - terminals)
 
-# Cython debug symbols
-cython_debug/
+            for i, action in enumerate(actions):
+                target_Qs[i][action] = targets[i]
 
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+            model.fit(states, target_Qs, epochs=1, verbose=0)
+
+        # Decay epsilon
+        if epsilon > epsilon_min:
+            epsilon *= epsilon_decay
+
+        # Render the game
+        buffer.fill((0, 0, 0))  # Clear the buffer
+
+        # Draw the paddles
+        pygame.draw.rect(buffer, (255, 255, 255), (0, left_paddle_y, PADDLE_WIDTH, PADDLE_HEIGHT))
+        pygame.draw.rect(buffer, (255, 255, 255), (WIDTH - PADDLE_WIDTH, right_paddle_y, PADDLE_WIDTH, PADDLE_HEIGHT))
+
+        # Draw the ball
+        pygame.draw.ellipse(buffer, (255, 255, 255), ball)
+
+        # Draw the score
+        score_text = f"{left_player_points} : {right_player_points}"
+        score_surface, _ = pygame.freetype.Font(None, 30).render(score_text, (255, 255, 255))
+        buffer.blit(score_surface, (WIDTH / 2 - score_surface.get_width() / 2, 10))
+
+        # Draw the clock
+        elapsed_time = int(time.time() - start_time)
+        hours = elapsed_time // 3600
+        minutes = (elapsed_time % 3600) // 60
+        seconds = (elapsed_time % 60)
+        clock_text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        clock_surface, _ = clock_font.render(clock_text, (255, 255, 255))
+        buffer.blit(clock_surface, (WIDTH / 2 - clock_surface.get_width() / 2, HEIGHT - clock_surface.get_height() - 10))
+
+        # Update the screen
+        screen.blit(buffer, (0, 0))
+        pygame.display.flip()
+        clock.tick(60)  # Limit the frame rate to 60 FPS
+
+# Clean up Pygame and exit
+finally:
+    pygame.quit()
+    sys.exit()
+
+
+# AlphaPong was made by Christian Villaba.
